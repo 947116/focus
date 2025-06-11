@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>iChooseTo</title>
+  <style>
+    body {
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    input {
+      background: #222;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 2rem;
+      text-align: center;
+      outline: none;
+      margin: 0;
+      box-sizing: border-box;
+      box-shadow: 0 2px 12px #0008;
+    }
+    #intentForm input::placeholder {
+      color: #aaa;
+      text-transform: lowercase;
+    }
+    #intentForm {
+      margin-top: 2rem;
+    }
+    #usageBox {
+      position: absolute;
+      top: 16px;
+      right: 24px;
+      text-align: right;
+      color: #fff;
+      font-size: 1.1rem;
+      z-index: 10;
+      min-width: 160px;
+    }
+    #computerUsage, #sessionTime {
+      color: #fff;
+      margin-bottom: 2px;
+      text-transform: lowercase;
+    }
+    /* Spinner/Pfeile bei Number-Input ausblenden */
+    #minutes::-webkit-outer-spin-button,
+    #minutes::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    #minutes[type=number] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body>
+  <div id="usageBox">
+    <div id="computerUsage">computer usage: --</div>
+    <div id="sessionTime" style="display:none">session time: --</div>
+  </div>
+  <form id="intentForm" style="display: flex; flex-direction: row; align-items: center; justify-content: center; width: 60vw; max-width: 700px; margin: 0 auto;">
+    <input type="text" id="intent" placeholder="what's your intention?" autofocus style="margin: 0 1rem 0 0; flex: 2 1 0; text-align: center; border: none; border-radius: 8px; background: #222; color: #fff; font-size: 2rem; padding: 0.7em 0.5em; box-shadow: 0 2px 12px #0008;" />
+    <input type="number" id="minutes" placeholder="min" min="1" max="99" step="1" maxlength="2" pattern="[0-9]{1,2}" style="margin: 0 0 0 1rem; width: 8ch; min-width: 8ch; max-width: 10ch; text-align: center; border: none; border-radius: 8px; background: #222; color: #fff; font-size: 2rem; padding: 0.7em 0.5em; box-shadow: 0 2px 12px #0008;" />
+    <button type="submit" style="display: none;"></button>
+  </form>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
