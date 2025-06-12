@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -25,18 +25,14 @@ function createMainWindow() {
 
   mainWindow.loadFile('index.html');
 
-  // Nach dem Laden des Fensters Usage-Daten schicken
   mainWindow.webContents.on('did-finish-load', () => {
     sendUsageData();
   });
 }
 
 function createFocusBar(intent, minutes) {
-  if (focusBar) {
-    focusBar.close();
-  }
+  if (focusBar) focusBar.close();
 
-  // Position aus Datei laden
   const positionFile = path.join(__dirname, 'focusbar-position.json');
   let x, y;
   if (fs.existsSync(positionFile)) {
@@ -61,9 +57,9 @@ function createFocusBar(intent, minutes) {
     alwaysOnTop: true,
     frame: false,
     resizable: false,
-    skipTaskbar: true, // Focusbar nicht in Taskleiste anzeigen
-    transparent: true, // Damit der Fensterrand wirklich eckig ist
-    roundedCorners: false, // Windows 11: keine abgerundeten Ecken
+    skipTaskbar: true,
+    transparent: true,
+    roundedCorners: false,
     webPreferences: {
       preload: path.join(__dirname, 'focusbar-preload.js'),
     },
@@ -76,7 +72,6 @@ function createFocusBar(intent, minutes) {
     focusBar.webContents.send('start-focus', { intent, minutes });
   });
 
-  // Position speichern, wenn verschoben
   focusBar.on('move', () => {
     const [newX, newY] = [focusBar.getBounds().x, focusBar.getBounds().y];
     fs.writeFileSync(positionFile, JSON.stringify({ x: newX, y: newY }));
@@ -99,7 +94,7 @@ function loadUsageData() {
     } else {
       usageData = { date: new Date().toISOString().slice(0, 10), computerUsage: 0, sessionTime: 0 };
     }
-  } catch (e) {
+  } catch {
     usageData = { date: new Date().toISOString().slice(0, 10), computerUsage: 0, sessionTime: 0 };
   }
 }
@@ -109,91 +104,23 @@ function saveUsageData() {
 }
 
 let usageInterval = null;
-
 function startUsageTracking() {
   if (usageInterval) clearInterval(usageInterval);
   usageInterval = setInterval(() => {
     loadUsageData();
     usageData.computerUsage += 1;
     saveUsageData();
-  }, 60000); // jede Minute
+  }, 60000);
 }
 
 function sendUsageData() {
   if (mainWindow) {
     mainWindow.webContents.send('usage-data', {
       computerUsage: Math.floor(os.uptime() / 60),
-      sessionTime: usageData.sessionTime
+      sessionTime: usageData.sessionTime,
     });
   }
 }
-
-app.whenReady().then(() => {
-  // Autostart beim Systemstart aktivieren
-  app.setLoginItemSettings({
-    openAtLogin: true,
-    path: process.execPath
-  });
-
-  loadUsageData();
-  startUsageTracking();
-
-  createMainWindow();
-
-  // Tray-Icon erstellen
-  if (!tray) {
-    // Versuche ein eigenes Icon zu laden, sonst Electron-Standardicon
-    let iconPath = path.join(__dirname, 'icon.png');
-    let trayIcon;
-    if (fs.existsSync(iconPath)) {
-      trayIcon = nativeImage.createFromPath(iconPath);
-    } else {
-      trayIcon = nativeImage.createEmpty(); // schwarzes Quadrat als Platzhalter
-      trayIcon = trayIcon.resize({ width: 16, height: 16 });
-    }
-    tray = new Tray(trayIcon);
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Hauptfenster öffnen',
-        click: () => {
-          if (focusBar) {
-            focusBar.close();
-          }
-          if (!mainWindow) {
-            createMainWindow();
-          } else {
-            mainWindow.show();
-            mainWindow.focus();
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Beenden',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
-    tray.setToolTip('Focus App');
-    tray.setContextMenu(contextMenu);
-    tray.on('double-click', () => {
-      if (focusBar) {
-        focusBar.close();
-      }
-      if (!mainWindow) {
-        createMainWindow();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-  });
-});
 
 function showMainWindowAndSendUsage() {
   if (!mainWindow) {
@@ -202,10 +129,79 @@ function showMainWindowAndSendUsage() {
     mainWindow.show();
     mainWindow.setAlwaysOnTop(true);
     mainWindow.focus();
-    setTimeout(() => mainWindow.setAlwaysOnTop(false), 100); // optional, damit es nicht immer "on top" bleibt
+    setTimeout(() => mainWindow.setAlwaysOnTop(false), 100);
   }
   sendUsageData();
 }
+
+app.whenReady().then(() => {
+  // --------- auto-launch setup ---------
+  const isDev = !app.isPackaged;
+  const autoLaunchPath = isDev ? process.execPath : app.getPath('exe');
+  const autoLaunchArgs = isDev ? [app.getAppPath()] : [];
+
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    path: autoLaunchPath,
+    args: autoLaunchArgs,
+  });
+  //---------------------------------------
+  // autostart
+  app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
+
+  loadUsageData();
+  startUsageTracking();
+  createMainWindow();
+
+  // global ALT+N shortcut (system‑wide)
+  const success = globalShortcut.register('Alt+N', () => {
+    // close focusbar if open
+    if (focusBar) focusBar.close();
+    // broadcast to any window to self‑close focusbar overlays
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('force-close-focusbar');
+    });
+    showMainWindowAndSendUsage();
+  });
+  if (!success) console.warn('Failed to register global ALT+N shortcut');
+
+  // Tray
+  if (!tray) {
+    let iconPath = path.join(__dirname, 'icon.png');
+    let trayIcon;
+    if (fs.existsSync(iconPath)) {
+      trayIcon = nativeImage.createFromPath(iconPath);
+    } else {
+      trayIcon = nativeImage.createEmpty().resize({ width: 16, height: 16 });
+    }
+    tray = new Tray(trayIcon);
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Hauptfenster öffnen',
+        click: () => {
+          if (focusBar) focusBar.close();
+          showMainWindowAndSendUsage();
+        },
+      },
+      { type: 'separator' },
+      { label: 'Beenden', click: () => app.quit() },
+    ]);
+    tray.setToolTip('Focus App');
+    tray.setContextMenu(contextMenu);
+    tray.on('double-click', () => {
+      if (focusBar) focusBar.close();
+      showMainWindowAndSendUsage();
+    });
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 ipcMain.on('focus-submitted', (event, { intent, minutes }) => {
   startSessionTimer(minutes);
@@ -218,37 +214,21 @@ ipcMain.on('focus-submitted', (event, { intent, minutes }) => {
 
 ipcMain.on('focus-ended', () => {
   if (focusBar) focusBar.close();
-  // Session time speichern
-  usageData.sessionTime = usageData.sessionTime || 0;
-  if (usageData.sessionTime === 0) {
-    usageData.sessionTime = 0;
-  }
   saveUsageData();
   showMainWindowAndSendUsage();
 });
 
-// ALT+n: Neue Session (Main-Fenster anzeigen)
 ipcMain.on('new-session-request', () => {
-  console.log('IPC received (main)');
-  // Broadcast an alle Fenster, damit sich Focusbar selbst schließt
-  BrowserWindow.getAllWindows().forEach(win => {
-    win.webContents.send('force-close-focusbar');
-  });
-  if (focusBar) {
-    console.log('Focusbar exists, closing...');
-    focusBar.close();
-  } else {
-    console.log('No focusbar to close.');
-  }
+  BrowserWindow.getAllWindows().forEach((win) => win.webContents.send('force-close-focusbar'));
+  if (focusBar) focusBar.close();
   showMainWindowAndSendUsage();
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-// Session time setzen, wenn Focusbar gestartet wird
 function startSessionTimer(minutes) {
   usageData.sessionTime = minutes;
   saveUsageData();
 }
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
