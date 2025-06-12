@@ -93,3 +93,4 @@ window.electronAPI.onUsageData((data) => {
     if (intent) { intent.focus(); intent.select?.(); }
   }
 });
+    
